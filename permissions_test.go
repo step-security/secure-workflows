@@ -1,9 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"io/ioutil"
 	"log"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -63,6 +66,75 @@ func TestAddJobLevelPermissions(t *testing.T) {
 			t.Errorf("test failed %s did not match expected output\n%s", f.Name(), output)
 		}
 	}
+}
+
+func TestStarterWorflowPermissions(t *testing.T) {
+	const inputDirectory = "/Users/varunsharma/go/src/github.com/varunsh-coder/starter-workflows/"
+	const solvableWorkflowsFile = "/Users/varunsharma/go/src/github.com/varunsh-coder/starter-workflows/solvableWorkflows.txt"
+	const nonSolvableWorkflowsFile = "/Users/varunsharma/go/src/github.com/varunsh-coder/starter-workflows/nonSolvableWorkflows.txt"
+	const missingActionsFile = "/Users/varunsharma/go/src/github.com/varunsh-coder/starter-workflows/actions.txt"
+	missingActions := make(map[string]bool)
+	solvableWorkflows := make(map[string]bool)
+	nonSolvableWorkflows := make(map[string]bool)
+	err := filepath.Walk(inputDirectory, func(path string, f os.FileInfo, err error) error {
+		if err != nil {
+			fmt.Println(err)
+			return err
+		}
+		ext := filepath.Ext(f.Name())
+		if ext != ".yaml" && ext != ".yml" {
+			return nil
+		}
+
+		input, err := ioutil.ReadFile(path)
+
+		if err != nil {
+			return err
+		}
+
+		fixWorkflowPermsResponse, err := AddJobLevelPermissions(string(input))
+
+		if err != nil {
+			return err
+		}
+
+		if len(fixWorkflowPermsResponse.MissingActions) > 0 {
+			nonSolvableWorkflows[path] = true
+			for _, v := range fixWorkflowPermsResponse.MissingActions {
+				actionkey := strings.Split(v, "@")
+				if len(actionkey) > 1 {
+					missingActions[actionkey[0]] = true
+				}
+			}
+		}
+
+		if fixWorkflowPermsResponse.HasErrors == false && fixWorkflowPermsResponse.IsChanged {
+			solvableWorkflows[path] = true
+		}
+
+		return nil
+	})
+	if err != nil {
+		fmt.Println(err)
+	}
+	actions := ""
+	for k := range missingActions {
+		actions += k + "\n"
+	}
+	ioutil.WriteFile(missingActionsFile, []byte(actions), 0644)
+
+	nonSolvableWorkflowsList := ""
+	for k := range nonSolvableWorkflows {
+		nonSolvableWorkflowsList += k + "\n"
+	}
+	ioutil.WriteFile(nonSolvableWorkflowsFile, []byte(nonSolvableWorkflowsList), 0644)
+
+	solvableWorkflowsList := ""
+	for k := range solvableWorkflows {
+		solvableWorkflowsList += k + "\n"
+	}
+	ioutil.WriteFile(solvableWorkflowsFile, []byte(solvableWorkflowsList), 0644)
+
 }
 
 func Test_addPermissions(t *testing.T) {
